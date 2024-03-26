@@ -1,9 +1,12 @@
 /**
- * Copyright 2022-2023 LinkedIn Corporation. All rights reserved.
+ * Copyright 2022-2024 LinkedIn Corporation. All rights reserved.
  * Licensed under the BSD-2 Clause license.
  * See LICENSE in the project root for license information.
  */
 package com.linkedin.coral.trino.rel2trino;
+
+import java.util.List;
+import java.util.Map;
 
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlCall;
@@ -38,6 +41,17 @@ public class DataTypeDerivedSqlCallConverter extends SqlShuttle {
 
   public DataTypeDerivedSqlCallConverter(HiveMetastoreClient mscClient, SqlNode topSqlNode) {
     toRelConverter = new HiveToRelConverter(mscClient);
+    topSqlNode.accept(new RegisterDynamicFunctionsForTypeDerivation());
+
+    TypeDerivationUtil typeDerivationUtil = new TypeDerivationUtil(toRelConverter.getSqlValidator(), topSqlNode);
+    operatorTransformerList = SqlCallTransformers.of(new FromUtcTimestampOperatorTransformer(typeDerivationUtil),
+        new GenericProjectTransformer(typeDerivationUtil), new NamedStructToCastTransformer(typeDerivationUtil),
+        new ConcatOperatorTransformer(typeDerivationUtil), new SubstrOperatorTransformer(typeDerivationUtil),
+        new UnionSqlCallTransformer(typeDerivationUtil));
+  }
+
+  public DataTypeDerivedSqlCallConverter(Map<String, Map<String, List<String>>> localMetaStore, SqlNode topSqlNode) {
+    toRelConverter = new HiveToRelConverter(localMetaStore);
     topSqlNode.accept(new RegisterDynamicFunctionsForTypeDerivation());
 
     TypeDerivationUtil typeDerivationUtil = new TypeDerivationUtil(toRelConverter.getSqlValidator(), topSqlNode);

@@ -1,5 +1,5 @@
 /**
- * Copyright 2017-2023 LinkedIn Corporation. All rights reserved.
+ * Copyright 2017-2024 LinkedIn Corporation. All rights reserved.
  * Licensed under the BSD-2 Clause license.
  * See LICENSE in the project root for license information.
  */
@@ -56,6 +56,7 @@ public class RelToTrinoConverter extends RelToSqlConverter {
    */
   private Map<String, Boolean> configs = new HashMap<>();
   private HiveMetastoreClient _hiveMetastoreClient;
+  private Map<String, Map<String, List<String>>> _localMetaStore;
 
   /**
    * Creates a RelToTrinoConverter.
@@ -79,6 +80,18 @@ public class RelToTrinoConverter extends RelToSqlConverter {
   }
 
   /**
+   * Creates a RelToTrinoConverter.
+   * @param localMetaStore In-memory Hive metastore represented in a map.
+   * @param configs configs
+   */
+  public RelToTrinoConverter(Map<String, Map<String, List<String>>> localMetaStore, Map<String, Boolean> configs) {
+    super(TrinoSqlDialect.INSTANCE);
+    checkNotNull(configs);
+    this.configs = configs;
+    _localMetaStore = localMetaStore;
+  }
+
+  /**
    * Convert relational algebra to Trino's SQL
    * @param relNode calcite relational algebra representation of SQL
    * @return SQL string
@@ -87,8 +100,17 @@ public class RelToTrinoConverter extends RelToSqlConverter {
     RelNode rel = convertRel(relNode, configs);
     SqlNode sqlNode = convertToSqlNode(rel);
 
-    SqlNode sqlNodeWithRelDataTypeDerivedConversions =
-        sqlNode.accept(new DataTypeDerivedSqlCallConverter(_hiveMetastoreClient, sqlNode));
+    DataTypeDerivedSqlCallConverter sqlNodeWithRelDataTypeDerivedConverter;
+
+    if (_localMetaStore != null && _hiveMetastoreClient == null) {
+      sqlNodeWithRelDataTypeDerivedConverter = new DataTypeDerivedSqlCallConverter(_localMetaStore, sqlNode);
+    } else if (_hiveMetastoreClient != null && _localMetaStore == null) {
+      sqlNodeWithRelDataTypeDerivedConverter = new DataTypeDerivedSqlCallConverter(_hiveMetastoreClient, sqlNode);
+    } else {
+      throw new IllegalStateException("Metadata source must be provided");
+    }
+
+    SqlNode sqlNodeWithRelDataTypeDerivedConversions = sqlNode.accept(sqlNodeWithRelDataTypeDerivedConverter);
 
     SqlNode sqlNodeWithUDFOperatorConverted =
         sqlNodeWithRelDataTypeDerivedConversions.accept(new CoralToTrinoSqlCallConverter(configs));
